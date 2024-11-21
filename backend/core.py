@@ -11,6 +11,8 @@ from langchain.chains.history_aware_retriever import create_history_aware_retrie
 from langchain.chains.retrieval import create_retrieval_chain
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
 
 INDEX_NAME = "langchain-doc-index"
 
@@ -33,9 +35,42 @@ def run_llm(query: str, chat_history: List[Dict[str, Any]] = []):
     )
 
     result = qa.invoke(input={"input": query, "chat_history": chat_history})
-    new_result = {
-        "query": result["input"],
-        "result": result["answer"],
-        "source_documents": result["context"],
-    }
-    return new_result
+
+    return result
+   # new_result = {
+    #    "query": result["input"],
+     #   "result": result["answer"],
+      #  "source_documents": result["context"],
+    #}
+    #return new_result
+
+def format_docs(docs):
+    return "\n\n".join(doc.page_content for doc in docs)
+
+def run_llm2(query: str, chat_history: List[Dict[str, Any]] = []):
+    embeddings = OpenAIEmbeddings()
+    docsearch = PineconeVectorStore(index_name=INDEX_NAME, embedding=embeddings)
+    chat = ChatOpenAI(model_name="gpt-4o", verbose=True, temperature=0)
+
+    rephrase_prompt = hub.pull("langchain-ai/chat-langchain-rephrase")
+
+    retrieval_qa_chat_prompt = hub.pull("langchain-ai/retrieval-qa-chat")
+
+    rag_chain = (
+        {
+            "context": docsearch.as_retriever() | format_docs,
+            "input": RunnablePassthrough(),
+        }
+        | retrieval_qa_chat_prompt
+        | chat
+        | StrOutputParser()
+    )
+
+    retrieve_docs_chain = (lambda x: x["input"]) | docsearch.as_retriever()
+
+    chain = RunnablePassthrough.assign(context=retrieve_docs_chain).assign(
+        answer=rag_chain
+    )
+
+    result = chain.invoke({"input": query, "chat_history": chat_history})
+    return result
