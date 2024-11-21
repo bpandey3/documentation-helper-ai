@@ -172,7 +172,9 @@ def create_sources_string(source_urls: Set[str]) -> str:
 # Handle user input
 if prompt:
     with st.spinner("🤔 Thinking..."):
-        generated_response = run_llm(query=prompt)
+        print("chat history")
+        print(st.session_state["chat_history"])
+        generated_response = run_llm(query=prompt, chat_history=st.session_state["chat_history"])
         sources = set(
             [doc.metadata["source"] for doc in generated_response["context"]]
         )
